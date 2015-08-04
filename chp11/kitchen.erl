@@ -42,6 +42,25 @@ fridge2(FoodList) ->
 fridge2() ->
     fridge2([]).
 
+store(Pid, Food) ->
+    Pid ! {self(), {store, Food}},
+    receive
+        {Pid, Message} -> Message
+    after 3000 ->
+        timeout
+    end.
+
+take(Pid, Food) ->
+    Pid ! {self(), {take, Food}},
+    receive
+        {Pid, Message} -> Message
+    after 3000 ->
+        timeout
+    end.
+
+start(FoodList) ->
+    spawn(?MODULE, fridge2, [FoodList]).
+
 main() ->
     Fridge1 = spawn(kitchen, fridge1, []),
     Fridge1 ! {self(), {store, cake}},
@@ -65,4 +84,15 @@ main() ->
     printmsg(),
     Fridge2 ! {self(), {take, cake}},
     printmsg(),
+    Fridge = start([cat, dog, cow]),
+    {_, Cat} = take(Fridge, cat),
+    {_, Dog} = take(Fridge, dog),
+    Chicken = take(Fridge, chicken),
+    io:format("Cat was ~s~n", [Cat]),
+    io:format("Dog was ~s~n", [Dog]),
+    io:format("Chicken was ~s~n", [Chicken]),
+    FakePidString = "<0.250.0>",
+    FakePid = list_to_pid(FakePidString),
+    Result = store(FakePid, chicken),
+    io:format("Result was ~s~n", [Result]),
     erlang:halt().
