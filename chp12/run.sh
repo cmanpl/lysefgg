@@ -1,2 +1,2 @@
 #!/bin/bash
-erl -pa ./ebin -noshell -run linkmon main
+erl -pa ./ebin -noshell -s linkmon main -s init stop

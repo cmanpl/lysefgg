@@ -10,3 +10,4 @@ all:
 clean: 
 	rm -rf $(BEAMDIR)
 	rm -rf erl_crash.dump
+	rm -f *.beam
