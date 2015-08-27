@@ -62,3 +62,33 @@ start() ->
     Criticism3 = judge(Critic, "Led Zeppelin", "Led Zeppelin III"),
     io:format("The criticism is: ~s~n", [Criticism3]).
     
+monitor_example() ->
+    process_flag(trap_exit, true),
+    Pid = spawn_link(?MODULE, linking, []),
+    receive
+        Result ->
+           io:format("Pid ~s exited normally with result ~s~n", [io_lib:write(Pid), io_lib:write(Result)])
+    after 5000 ->
+        io:format("Timed out after 5 seconds~n")
+    end.
+
+linking() ->
+    spawn_link(?MODULE, monitoring, []),
+    receive
+        _ ->
+            % Linked to a process - will not receive a message when it dies unless it's a system process
+            io:format("Should never execute~n")
+    end.
+
+monitoring() ->
+    Ref = monitor(process, spawn(fun() -> timer:sleep(1000), io:format("I, process ~s, died~n", [io_lib:write(self())]) end)),
+    receive
+        {'DOWN', Ref, process,  Pid, Reason} ->
+            % monitored process has died
+            io:format("Monitored process died, Ref=~s, Pid=~s, Reason=~s~n", [io_lib:write(Ref), io_lib:write(Pid),io_lib:write(Reason)]);
+        _ ->
+            io:format("Received some other message~n")
+    after 2000 ->
+        timeout
+    end,
+    exit(monkey_brains).
