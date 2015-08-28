@@ -35,6 +35,37 @@ main() ->
 start_critic() ->
     spawn(?MODULE, critic, []).
 
+start_critic2() ->
+    spawn(?MODULE, restarter, []).
+
+restarter() ->
+    process_flag(trap_exit, true),
+    Pid = spawn_link(?MODULE, critic, []),
+    % Make the Pid of the critic available through the atom 'critic'
+    register(critic, Pid),
+    io:format("Pid: ~s, critic: ~s~n", [io_lib:write(Pid), io_lib:write(whereis(critic))]),
+    receive
+        {'EXIT', Pid, normal} -> % Normal completion
+            ok;
+        {'EXIT', Pid, shutdown} -> % Critical was shutdown normally
+            ok;
+        {'EXIT', Pid, Reason} ->
+            io:format("Restarting for reason: ~s~n", [io_lib:write(Reason)]),
+            restarter() % Tail recursive call to restart process
+    end.
+
+start2() ->
+    start_critic2(),
+    timer:sleep(1000),
+    Criticism = judge2("Led Zeppelin", "Led Zeppelin IV"),
+    io:format("The criticism is: ~s~n", [Criticism]),
+    exit(whereis(critic), indigestion),
+    Criticism2 = judge2("Pink Floyd", "Dark Side Of The Moon"),
+    io:format("The criticism is: ~s~n", [Criticism2]),
+    exit(whereis(critic), heart_attack),
+    Criticism3 = judge2("Led Zeppelin", "Led Zeppelin III"),
+    io:format("The criticism is: ~s~n", [Criticism3]).
+
 critic() ->
     receive
         {From, {"Led Zeppelin", _}} ->
@@ -46,6 +77,17 @@ critic() ->
 
 judge(Pid, Band, Album) ->
     Pid ! {self(), {Band, Album}},
+    receive
+        {Pid, Criticism} -> Criticism
+    after 2000 ->
+        timeout
+    end.
+
+judge2(Band, Album) ->
+    % Sends message to process named 'critic'
+    timer:sleep(500),
+    critic ! {self(), {Band, Album}},
+    Pid = whereis(critic),
     receive
         {Pid, Criticism} -> Criticism
     after 2000 ->
