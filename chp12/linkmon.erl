@@ -35,6 +35,35 @@ main() ->
 start_critic() ->
     spawn(?MODULE, critic, []).
 
+start() ->
+    Critic = start_critic(),
+    Criticism = judge(Critic, "Led Zeppelin", "Led Zeppelin IV"),
+    io:format("The criticism is: ~s~n", [Criticism]),
+    Criticism2 = judge(Critic, "Pink Floyd", "Dark Side Of The Moon"),
+    io:format("The criticism is: ~s~n", [Criticism2]),
+    exit(Critic, heart_attack),
+    Criticism3 = judge(Critic, "Led Zeppelin", "Led Zeppelin III"),
+    io:format("The criticism is: ~s~n", [Criticism3]).
+    
+critic() ->
+    receive
+        {From, {"Led Zeppelin", _}} ->
+            From ! {self(), "Right on!"};
+        {From, {_, _}} ->
+            From ! {self(), "Meh ..."}
+    end,
+    critic().
+
+judge(Pid, Band, Album) ->
+    Pid ! {self(), {Band, Album}},
+    receive
+        {Pid, Criticism} -> Criticism
+    after 2000 ->
+        timeout
+    end.
+
+% Slight improvements using a restarter process
+
 start_critic2() ->
     spawn(?MODULE, restarter, []).
 
@@ -54,6 +83,17 @@ restarter() ->
             restarter() % Tail recursive call to restart process
     end.
 
+judge2(Band, Album) ->
+    % Sends message to process named 'critic'
+    timer:sleep(500),
+    critic ! {self(), {Band, Album}},
+    Pid = whereis(critic),
+    receive
+        {Pid, Criticism} -> Criticism
+    after 2000 ->
+        timeout
+    end.
+
 start2() ->
     start_critic2(),
     timer:sleep(1000),
@@ -66,44 +106,76 @@ start2() ->
     Criticism3 = judge2("Led Zeppelin", "Led Zeppelin III"),
     io:format("The criticism is: ~s~n", [Criticism3]).
 
-critic() ->
+% Use references instead of matching on critic PID in case the critic dies
+
+wait_for_critic() ->
+    wait_for_critic(100).
+
+wait_for_critic(N) when N > 0 ->
+    monitor(process, critic),
     receive
-        {From, {"Led Zeppelin", _}} ->
-            From ! {self(), "Right on!"};
-        {From, {_, _}} ->
-            From ! {self(), "Meh ..."}
+        {'DOWN', _, process, _, noproc} ->
+            timer:sleep(1),
+            wait_for_critic(N - 1)
+    after 10 ->
+        ok
+    end;
+wait_for_critic(_) ->
+    failure.
+
+judge3(Band, Album) ->
+    % Create a reference to match messages against
+    Ref = make_ref(),
+    wait_for_critic(),
+    % Sends message to process named 'critic' using the reference
+    critic ! {self(), Ref, {Band, Album}},
+    receive
+        {Ref, Criticism} -> Criticism
+    after 2000 ->
+        timeout
+    end.
+
+critic3() ->
+    receive
+        {From, Ref, {"Led Zeppelin", _}} ->
+            From ! {Ref, "Right on!"};
+        {From, Ref, {_, _}} ->
+            From ! {Ref, "Meh ..."}
     end,
-    critic().
+    critic3().
 
-judge(Pid, Band, Album) ->
-    Pid ! {self(), {Band, Album}},
+restarter3() ->
+    process_flag(trap_exit, true),
+    Pid = spawn_link(?MODULE, critic3, []),
+    % Make the Pid of the critic available through the atom 'critic'
+    register(critic, Pid),
+    io:format("Pid: ~s, critic: ~s~n", [io_lib:write(Pid), io_lib:write(whereis(critic))]),
     receive
-        {Pid, Criticism} -> Criticism
-    after 2000 ->
-        timeout
+        {'EXIT', Pid, normal} -> % Normal completion
+            ok;
+        {'EXIT', Pid, shutdown} -> % Critical was shutdown normally
+            ok;
+        {'EXIT', Pid, Reason} ->
+            io:format("Restarting for reason: ~s~n", [io_lib:write(Reason)]),
+            restarter3() % Tail recursive call to restart process
     end.
 
-judge2(Band, Album) ->
-    % Sends message to process named 'critic'
-    timer:sleep(500),
-    critic ! {self(), {Band, Album}},
-    Pid = whereis(critic),
-    receive
-        {Pid, Criticism} -> Criticism
-    after 2000 ->
-        timeout
-    end.
+start_critic3() ->
+    spawn(?MODULE, restarter3, []).
 
-start() ->
-    Critic = start_critic(),
-    Criticism = judge(Critic, "Led Zeppelin", "Led Zeppelin IV"),
+start3() ->
+    start_critic3(),
+    Criticism = judge3("Led Zeppelin", "Led Zeppelin IV"),
     io:format("The criticism is: ~s~n", [Criticism]),
-    Criticism2 = judge(Critic, "Pink Floyd", "Dark Side Of The Moon"),
+    exit(whereis(critic), indigestion),
+    Criticism2 = judge3("Pink Floyd", "Dark Side Of The Moon"),
     io:format("The criticism is: ~s~n", [Criticism2]),
-    exit(Critic, heart_attack),
-    Criticism3 = judge(Critic, "Led Zeppelin", "Led Zeppelin III"),
+    exit(whereis(critic), heart_attack),
+    Criticism3 = judge3("Led Zeppelin", "Led Zeppelin III"),
     io:format("The criticism is: ~s~n", [Criticism3]).
-    
+
+% Demonstrating the difference between links and monitors
+
 monitor_example() ->
     process_flag(trap_exit, true),
     Pid = spawn_link(?MODULE, linking, []),
